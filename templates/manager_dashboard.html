@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Group Manager Portal | Dukaloco & KP</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div id="flash-container" style="position: fixed; top: 20px; right: 20px; z-index: 1050; min-width: 300px;">
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show shadow-lg mb-2 flash-message" role="alert">
+                    <span>{{ message }}</span>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        </div>
+        <script>
+            setTimeout(function() {
+                let alerts = document.querySelectorAll('.flash-message');
+                alerts.forEach(function(alert) {
+                    let bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                });
+            }, 4000);
+        </script>
+    {% endif %}
+{% endwith %}
+
+<div class="container mt-4">
+    <div class="p-4 mb-4 bg-dark text-white rounded d-flex justify-content-between align-items-center">
+        <div>
+            <h2>Group Manager Approval Portal</h2>
+            <p class="mb-0">Overseeing: <span class="badge bg-primary me-1">Dukaloco</span><span class="badge bg-secondary">KP</span> | Manager: <strong>{{ current_user.full_name }}</strong></p>
+        </div>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline-light">Log Out</a>
+    </div>
+
+    <div class="card shadow-sm p-3 mb-4">
+        <h4 class="mb-3 text-warning">Pending Leave Applications</h4>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Company</th>
+                        <th>Employee</th>
+                        <th>Type</th>
+                        <th>Dates</th>
+                        <th>Days</th>
+                        <th>Reason</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in pending_requests %}
+                    <tr>
+                        <td>
+                            {% if req.applicant.company == 'Dukaloco' %}
+                                <span class="badge bg-primary">Dukaloco</span>
+                            {% else %}
+                                <span class="badge bg-dark">KP</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <strong>{{ req.applicant.full_name }}</strong><br>
+                            <small class="text-muted">ID: {{ req.applicant.employee_id }}</small>
+                        </td>
+                        <td><span class="badge bg-info text-dark">{{ req.leave_type }}</span></td>
+                        <td>{{ req.start_date.strftime('%Y-%m-%d') }} to {{ req.end_date.strftime('%Y-%m-%d') }}</td>
+                        <td><strong>{{ req.total_days }}</strong> days</td>
+                        <td>{{ req.reason }}</td>
+                        <td>
+                            <div class="d-flex gap-2">
+                                <form action="{{ url_for('approve_leave', request_id=req.id) }}" method="POST">
+                                    <input type="text" name="remarks" class="form-control form-control-sm mb-1" placeholder="Remarks">
+                                    <button type="submit" class="btn btn-success btn-sm w-100">Approve</button>
+                                </form>
+                                <form action="{{ url_for('reject_leave', request_id=req.id) }}" method="POST">
+                                    <input type="text" name="remarks" class="form-control form-control-sm mb-1" placeholder="Remarks">
+                                    <button type="submit" class="btn btn-danger btn-sm w-100">Reject</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-3">No pending leave applications across Dukaloco or KP.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card shadow-sm p-3">
+        <h5 class="mb-3 text-secondary">Processed History</h5>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead>
+                    <tr>
+                        <th>Company</th>
+                        <th>Employee</th>
+                        <th>Type</th>
+                        <th>Days</th>
+                        <th>Status</th>
+                        <th>Remarks</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in processed_requests %}
+                    <tr>
+                        <td>
+                            {% if req.applicant.company == 'Dukaloco' %}
+                                <span class="badge bg-primary">Dukaloco</span>
+                            {% else %}
+                                <span class="badge bg-dark">KP</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ req.applicant.full_name }} ({{ req.applicant.employee_id }})</td>
+                        <td>{{ req.leave_type }}</td>
+                        <td>{{ req.total_days }}</td>
+                        <td>
+                            {% if req.status == 'Approved' %}
+                                <span class="badge bg-success">Approved</span>
+                            {% else %}
+                                <span class="badge bg-danger">Rejected</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ req.manager_remarks or '-' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted">No processed history found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
