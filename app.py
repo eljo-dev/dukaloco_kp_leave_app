@@ -2,7 +2,39 @@ from flask import Flask, render_template, redirect, url_for, flash, request
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug. security import generate_password_hash, check_password_hash
 from models import db, User, LeaveRequest
-from datetime import datetime
+from datetime import datetime, timedelta, date
+
+PUBLIC_HOLIDAYS_2026 = {
+    "2026-01-01",  # New Year's Day
+    "2026-04-03",  # Good Friday
+    "2026-04-06",  # Easter Monday
+    "2026-05-01",  # Labour Day
+    "2026-06-01",  # Madaraka Day
+    "2026-10-20",  # Mashujaa Day
+    "2026-12-12",  # Jamhuri Day
+    "2026-12-25",  # Christmas Day
+    "2026-12-26",  # Utamaduni / Boxing Day
+}
+
+def calculate_working_days(start_date, end_date, work_saturdays):
+    #print(f"--> DEBUG: start={start_date}, end={end_date}, work_saturdays={work_saturdays}")
+    current_date = start_date
+    working_days = 0
+
+    while current_date <= end_date:
+        weekday = current_date.weekday()
+        date_str = current_date.strftime("%Y-%m-%d")
+        is_holiday = date_str in PUBLIC_HOLIDAYS_2026
+
+        sunday = (weekday == 6)
+        saturday_off = (weekday == 5 and not work_saturdays)
+
+        if not sunday and not saturday_off and not is_holiday:
+            working_days += 1
+
+        current_date += timedelta(days=1)
+
+    return working_days
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'dukaloco-kp-secret-key-2026'
@@ -26,13 +58,13 @@ def home():
 @app.route('/register', methods = ['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        employee_id = request.form.get('employee_id').strip()
+        new_employee_id = request.form.get('employee_id', '').strip().upper()
         full_name = request.form.get('full_name').strip()
         company = request.form.get('company').strip()
         password = request.form.get('password').strip()
         role = request.form.get('role', 'employee').strip()
 
-        existing_user = User.query.filter_by(employee_id=employee_id).first()
+        existing_user = User.query.filter_by(employee_id=new_employee_id).first()
         if existing_user:
             flash('Employee ID already registered. Please log in.', 'warning')
             return redirect(url_for('login'))
@@ -40,12 +72,13 @@ def register():
         hashed_password = generate_password_hash(password)
 
         new_user = User(
-            employee_id=employee_id,
+            employee_id=new_employee_id,
             full_name=full_name,
             company=company,
             password_hash=hashed_password,
-            role=role
-        )
+            role=role,
+            hire_date=date.today()
+            )
 
         db.session.add(new_user)
         db.session.commit()
@@ -57,7 +90,7 @@ def register():
 @app.route('/login', methods = ['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        employee_id = request.form.get('employee_id').strip()
+        employee_id = request.form.get('employee_id', '').strip().upper()
         password = request.form.get('password')
         company = request.form.get('company')
 
@@ -98,7 +131,7 @@ def apply_leave():
         leave_type = request.form.get('leave_type')
         start_date_str = request.form.get('start_date')
         end_date_str = request.form.get('end_date')
-        reason = request.form.get('reason').strip()
+        reason = request.form.get('reason', '').strip()
 
         try:
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
@@ -111,16 +144,28 @@ def apply_leave():
             flash('End date cannot be earlier than start date.' 'danger')
             return redirect(url_for('apply_leave'))
 
-        total_days = (end_date-start_date).days+1
+        total_days = calculate_working_days(start_date, end_date, current_user.work_saturdays)
 
-        if leave_type == 'Annual' and total_days > current_user.annual_leave_balance:
-            flash(f'Insufficient Annual Leave Balance. You requested {total_days} days, but only have {current_user.annual_leave_balance} remaining.' 'warning')
+        if total_days == 0:
+            flash('Selected date range contains no working days (weekends or public holidays only).', 'warning')
             return redirect(url_for('apply_leave'))
-        elif leave_type == 'Sick' and total_days > current_user.sick_leave_balance:
-            flash(f'Insufficient Sick Leave Balance. You requested {total_days} days, but only have {current_user.sick_leave_balance} remaining.' 'warning')
+
+        if leave_type == 'Annual' and total_days > current_user.current_annual_leave_balance:
+            flash(f'Insufficient Annual Leave balance. Requested: {total_days} day(s), Available: {current_user.current_annual_leave_balance}.', 'warning')
             return redirect(url_for('apply_leave'))
-        elif leave_type == 'Casual' and total_days > current_user.casual_leave_balance:
-            flash(f'Insufficient Casual Leave Balance. You requested {total_days} days, but only have {current_user.casual_leave_balance} remaining.' 'warning')
+
+        elif leave_type == 'Sick':
+            total_sick_available = current_user.sick_leave_paid_balance + current_user.sick_leave_unpaid_balance
+            if total_days > total_sick_available:
+                flash(f'Insufficient Sick Leave balance. Requested: {total_days} day(s), Available: {total_sick_available} total sick day(s) ({current_user.sick_leave_paid_balance} paid, {current_user.sick_leave_unpaid_balance} unpaid).', 'warning')
+                return redirect(url_for('apply_leave'))
+
+        elif leave_type == 'Maternity' and total_days > current_user.maternity_leave_balance:
+            flash(f'Insufficient Maternity Leave balance. Requested: {total_days} day(s), Available: {current_user.maternity_leave_balance}.', 'warning')
+            return redirect(url_for('apply_leave'))
+
+        elif leave_type == 'Paternity' and total_days > current_user.paternity_leave_balance:
+            flash(f'Insufficient Paternity Leave balance. Requested: {total_days} day(s), Available: {current_user.paternity_leave_balance}.', 'warning')
             return redirect(url_for('apply_leave'))
 
         new_request = LeaveRequest(
@@ -140,23 +185,23 @@ def apply_leave():
         return redirect(url_for('dashboard'))
     return render_template('apply_leave.html')
 
-@app.route('/manager/dashboard')
+@app.route('/manager_dashboard')
 @login_required
 def manager_dashboard():
     if current_user.role != 'manager':
-        flash('Access denied. Manager privileges required.', 'danger')
+        flash('Unauthorized access.', 'danger')
         return redirect(url_for('dashboard'))
 
     pending_requests = LeaveRequest.query.filter_by(status='Pending').all()
-
-    processed_requests = LeaveRequest.query.filter(
-        LeaveRequest.status.in_(['Approved', 'Rejected'])
-    ).all()
+    processed_requests = LeaveRequest.query.filter(LeaveRequest.status != 'Pending').all()
+    
+    employees = User.query.filter(User.role !='manager').order_by(User.company, User.full_name).all()
 
     return render_template(
         'manager_dashboard.html',
         pending_requests=pending_requests,
-        processed_requests=processed_requests
+        processed_requests=processed_requests,
+        employees=employees
     )
 
 
@@ -174,26 +219,36 @@ def approve_leave(request_id):
         flash('This request has already been processed.', 'info')
         return redirect(url_for('manager_dashboard'))
 
+    days = leave_req.total_days
+
     if leave_req.leave_type == 'Annual':
-        if applicant.annual_leave_balance >= leave_req.total_days:
-            applicant.annual_leave_balance -= leave_req.total_days
+        if applicant.annual_leave_balance >= leave_req.days:
+            applicant.annual_leave_balance -= leave_req.days
         else:
-            flash(f'Cannot approve. {applicant.full_name} only has {applicant.annual_leave_balance} Annual days left.', 'danger')
+            flash(f'Cannot approve. {applicant.full_name} only has {applicant.annual_leave_balance} Annual day(s) left.', 'danger')
             return redirect(url_for('manager_dashboard'))
 
     elif leave_req.leave_type == 'Sick':
-        if applicant.sick_leave_balance >= leave_req.total_days:
-            applicant.sick_leave_balance -= leave_req.total_days
+        total_sick_available = applicant.sick_leave_paid_balance + applicant.sick_leave_unpaid_balance
+        if days > total_sick_available:
+            applicant.sick_leave_paid_balance -= days
         else:
-            flash(f'Cannot approve. {applicant.full_name} only has {applicant.sick_leave_balance} Sick days left.', 'danger')
+            remaining_unpaid_deduction = days - applicant.sick_leave_paid_balance
+            applicant.sick_leave_paid_balance = 0
+            applicant.sick_leave_unpaid_balance -= remaining_unpaid_deduction
+
+    elif leave_req.leave_type == 'Maternity':
+        if applicant.maternity_leave_balance >= leave_req.days:
+            applicant.maternity_leave_balance -= leave_req._days
+        else:
+            flash(f'Cannot approve. {applicant.full_name} only has {applicant.maternity_leave_balance} Maternity day(s) left.', 'danger')
             return redirect(url_for('manager_dashboard'))
 
-    elif leave_req.leave_type == 'Casual':
-        if applicant.casual_leave_balance >= leave_req.total_days:
-            applicant.casual_leave_balance -= leave_req.total_days
+    elif leave_req.leave_type == 'Paternity':
+        if applicant.paternity_leave_balance >= leave_req.days:
+            applicant.paternity_leave_balance -= leave_req.days
         else:
-            flash(f'Cannot approve. {applicant.full_name} only has {applicant.casual_leave_balance} Casual days left.', 'danger')
-            return redirect(url_for('manager_dashboard'))
+            flash(f'Cannot approve. {applicant.full_name} only has {applicant.maternity_leave_balance} Paternity day(s) left.', 'danger')
 
     leave_req.status = 'Approved'
     leave_req.manager_remarks = request.form.get('remarks', 'Approved by manager')
@@ -223,19 +278,59 @@ def reject_leave(request_id):
 
     flash(f'Leave request for {applicant.full_name} ({applicant.company}) rejected.', 'info')
     return redirect(url_for('manager_dashboard'))
+
+@app.route('/edit_employee/<int:user_id>', methods=['POST'])
+@login_required
+def edit_employee(user_id):
+    if current_user.role != 'manager':
+        flash('Unauthorized access.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    employee = User.query.get_or_404(user_id)
+    hire_date_str = request.form.get('hire_date')
+    employee.work_saturdays = 'work_saturdays' in request.form
+    db.session.commit()
+
+    if hire_date_str:
+        try:
+            employee.hire_date = datetime.strptime(hire_date_str, '%Y-%m-%d').date()
+            
+            if 'carried_over_leave' in request.form:
+                employee.carried_over_leave = float(request.form.get('carried_over_leave') or 0)
+
+            db.session.commit()
+            flash(f"Updated profile for {employee.full_name} successfully.", 'success')
+        except ValueError:
+            flash('Invalid date or number format provided.', 'danger')
+
+    return redirect(url_for('manager_dashboard'))
+
+@app.route('/change-password', methods=['POST'])
+@login_required
+def change_password():
+    old_password = request.form.get('old_password')
+    new_password = request.form.get('new_password')
+    confirm_password = request.form.get('confirm_password')
+
+    if not check_password_hash(current_user.password_hash, old_password):
+        flash('Incorrect current password.', 'danger')
+        return redirect(request.referrer or url_for('dashboard'))
+
+    if new_password != confirm_password:
+        flash('New password and confirmation do not match.', 'danger')
+        return redirect(request.referrer or url_for('dashboard'))
+
+    if len(new_password) < 6:
+        flash('New password must be at least 6 characters long.', 'danger')
+        return redirect(request.referrer or url_for('dashboard'))
+
+    current_user.password_hash = generate_password_hash(new_password)
+    db.session.commit()
+
+    flash('Password updated successfully!', 'success')
+    return redirect(request.referrer or url_for('dashboard'))
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-
-        if not User.query.filter_by(employee_id='MGR-001').first():
-            group_mgr = User(
-                employee_id='MGR-001',
-                full_name='Group Manager',
-                company='Group',
-                password_hash=generate_password_hash('admin123'),
-                role='manager'
-            )
-            db.session.add(group_mgr)
-            db.session.commit()
-
     app.run(debug=True)
