@@ -222,8 +222,8 @@ def approve_leave(request_id):
     days = leave_req.total_days
 
     if leave_req.leave_type == 'Annual':
-        if applicant.annual_leave_balance >= leave_req.days:
-            applicant.annual_leave_balance -= leave_req.days
+        if applicant.current_annual_leave_balance >= leave_req.total_days:
+            pass
         else:
             flash(f'Cannot approve. {applicant.full_name} only has {applicant.annual_leave_balance} Annual day(s) left.', 'danger')
             return redirect(url_for('manager_dashboard'))
@@ -231,25 +231,26 @@ def approve_leave(request_id):
     elif leave_req.leave_type == 'Sick':
         total_sick_available = applicant.sick_leave_paid_balance + applicant.sick_leave_unpaid_balance
         if days > total_sick_available:
+            flash(f'Cannot approve. {applicant.full_name} only has 'f'{total_sick_available} Sick day(s) available.','danger')
+            return redirect(url_for('manager_dashboard'))
+        if days <= applicant.sick_leave_paid_balance:
             applicant.sick_leave_paid_balance -= days
         else:
-            remaining_unpaid_deduction = days - applicant.sick_leave_paid_balance
+            remaining = days - applicant.sick_leave_paid_balance
             applicant.sick_leave_paid_balance = 0
-            applicant.sick_leave_unpaid_balance -= remaining_unpaid_deduction
+            applicant.sick_leave_unpaid_balance -= remaining
 
     elif leave_req.leave_type == 'Maternity':
-        if applicant.maternity_leave_balance >= leave_req.days:
-            applicant.maternity_leave_balance -= leave_req._days
-        else:
+        if applicant.maternity_leave_balance < days:
             flash(f'Cannot approve. {applicant.full_name} only has {applicant.maternity_leave_balance} Maternity day(s) left.', 'danger')
             return redirect(url_for('manager_dashboard'))
+        applicant.maternity_leave_balance -= days
 
     elif leave_req.leave_type == 'Paternity':
-        if applicant.paternity_leave_balance >= leave_req.days:
-            applicant.paternity_leave_balance -= leave_req.days
-        else:
-            flash(f'Cannot approve. {applicant.full_name} only has {applicant.maternity_leave_balance} Paternity day(s) left.', 'danger')
-
+        if applicant.paternity_leave_balance < days:
+            flash(f'Cannot approve. {applicant.full_name} only has {applicant.paternity_leave_balance} Paternity day(s) left.', 'danger')
+            return redirect(url_for('manager_dashboard'))
+        applicant.paternity_leave_balance -= days
     leave_req.status = 'Approved'
     leave_req.manager_remarks = request.form.get('remarks', 'Approved by manager')
     db.session.commit()
