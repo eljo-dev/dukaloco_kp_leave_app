@@ -81,6 +81,19 @@
                         <td>{{ req.start_date.strftime('%Y-%m-%d') }} to {{ req.end_date.strftime('%Y-%m-%d') }}</td>
                         <td><strong>{{ req.total_days }}</strong> days</td>
                         <td>{{ req.reason }}</td>
+
+                        <td>
+                            {% if req.medical_certificate %}
+                                <a href="{{ url_for('static', filename='uploads/' + req.medical_certificate) }}"
+                                target="_blank"
+                                class="btn btn-sm btn-outline-primary">
+                                View Sick Sheet
+                                </a>
+                            {% else %}
+                                <span class="text-muted">No Attachment</span>
+                            {% endif %}
+                        </td>
+
                         <td>
                             <div class="d-flex gap-2">
                                 <form action="{{ url_for('approve_leave', request_id=req.id) }}" method="POST">
@@ -248,7 +261,6 @@
     </div>
 </div>
 
-<!-- Change Password Modal -->
 <div class="modal fade text-dark" id="changePasswordModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">

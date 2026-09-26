@@ -37,13 +37,12 @@
             <span class="badge bg-secondary">{{ current_user.company }}</span>
         </div>
 
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             <div class="mb-3">
                 <label class="form-label">Leave Type</label>
                 <select name="leave_type" class="form-select" required>
                     <option value="Annual">Annual Leave</option>
-                    <option value="Sick (Paid)">Sick Leave (Paid)</option>
-                    <option value="Sick (Unpaid)">Sick Leave (Unpaid)</option>
+                    <option value="Sick Leave">Sick Leave</option>
                     <option value="Maternity">Maternity</option>
                     <option value="Paternity">Paternity</option>
                     <option value="Unpaid">Unpaid</option>
@@ -64,6 +63,11 @@
             <div class="mb-3">
                 <label class="form-label">Reason for Leave</label>
                 <textarea name="reason" class="form-control" rows="3" placeholder="Brief explanation..." required></textarea>
+            </div>
+
+            <div class="mb-3">
+                <label for="sick_sheet" class="form-label">Attach Sick Sheet</label>
+                <input class="form-control" type="file" id="sick_sheet" name="sick_sheet" accept=".pdf,.png,.jpg,.jpeg">
             </div>
 
             <div class="d-flex justify-content-between mt-4">

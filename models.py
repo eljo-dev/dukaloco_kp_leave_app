@@ -17,7 +17,7 @@ class User(UserMixin, db.Model):
     hire_date = db.Column(db.Date, nullable=False, default=date.today)
     carried_over_leave = db.Column(db.Float, default=0.0)
     sick_leave_paid_balance = db.Column(db.Float, default=7.0)
-    sick_leave_unpaid_balance = db.Column(db.Float, default=7.0)
+    #sick_leave_unpaid_balance = db.Column(db.Float, default=7.0)
     maternity_leave_balance = db.Column(db.Float, default=90.0)
     paternity_leave_balance = db.Column(db.Float, default=14.0)
     leave_requests = db.relationship('LeaveRequest', backref='applicant', lazy=True)
@@ -66,3 +66,4 @@ class LeaveRequest(db.Model):
     status = db.Column(db.String(20), nullable=False, default='Pending')
     applied_on = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     manager_remarks = db.Column(db.String(255), nullable=True)
+    medical_certificate = db.Column(db.String(255), nullable=True)

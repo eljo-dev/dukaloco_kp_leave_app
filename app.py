@@ -3,6 +3,14 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from werkzeug. security import generate_password_hash, check_password_hash
 from models import db, User, LeaveRequest
 from datetime import datetime, timedelta, date
+import os
+from werkzeug.utils import secure_filename
+
+app = Flask(__name__)
+
+UPLOAD_FOLDER =os.path.join(app.root_path, 'static/uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 PUBLIC_HOLIDAYS_2026 = {
     "2026-01-01",  # New Year's Day
@@ -36,9 +44,9 @@ def calculate_working_days(start_date, end_date, work_saturdays):
 
     return working_days
 
-app = Flask(__name__)
 app.config['SECRET_KEY'] = 'dukaloco-kp-secret-key-2026'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+#app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:5331@localhost:5432/leave_portal_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
@@ -154,11 +162,9 @@ def apply_leave():
             flash(f'Insufficient Annual Leave balance. Requested: {total_days} day(s), Available: {current_user.current_annual_leave_balance}.', 'warning')
             return redirect(url_for('apply_leave'))
 
-        elif leave_type == 'Sick':
-            total_sick_available = current_user.sick_leave_paid_balance + current_user.sick_leave_unpaid_balance
-            if total_days > total_sick_available:
-                flash(f'Insufficient Sick Leave balance. Requested: {total_days} day(s), Available: {total_sick_available} total sick day(s) ({current_user.sick_leave_paid_balance} paid, {current_user.sick_leave_unpaid_balance} unpaid).', 'warning')
-                return redirect(url_for('apply_leave'))
+        elif leave_type == 'Sick' and total_days > current_user.current_sick_leave_paid_balance:
+            flash(f'Insufficient Sick Leave balance. Requested: {total_days} day(s), Available: {current_user.sick_leave_paid_balance}.', 'warning')
+            return redirect(url_for('apply_leave'))
 
         elif leave_type == 'Maternity' and total_days > current_user.maternity_leave_balance:
             flash(f'Insufficient Maternity Leave balance. Requested: {total_days} day(s), Available: {current_user.maternity_leave_balance}.', 'warning')
@@ -168,6 +174,12 @@ def apply_leave():
             flash(f'Insufficient Paternity Leave balance. Requested: {total_days} day(s), Available: {current_user.paternity_leave_balance}.', 'warning')
             return redirect(url_for('apply_leave'))
 
+        filename=None
+        file = request.files.get('sick_sheet')
+        if file and file.filename != '':
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+
         new_request = LeaveRequest(
             user_id=current_user.id,
             leave_type=leave_type,
@@ -175,7 +187,8 @@ def apply_leave():
             end_date=end_date,
             total_days=total_days,
             reason=reason,
-            status='Pending'
+            status='Pending',
+            medical_certificate=filename
         )
 
         db.session.add(new_request)
@@ -220,6 +233,8 @@ def approve_leave(request_id):
         return redirect(url_for('manager_dashboard'))
 
     days = leave_req.total_days
+    print("Leave type:", leave_req.leave_type)
+    print("Days:", days)
 
     if leave_req.leave_type == 'Annual':
         if applicant.current_annual_leave_balance >= leave_req.total_days:
@@ -228,17 +243,16 @@ def approve_leave(request_id):
             flash(f'Cannot approve. {applicant.full_name} only has {applicant.annual_leave_balance} Annual day(s) left.', 'danger')
             return redirect(url_for('manager_dashboard'))
 
-    elif leave_req.leave_type == 'Sick':
-        total_sick_available = applicant.sick_leave_paid_balance + applicant.sick_leave_unpaid_balance
-        if days > total_sick_available:
-            flash(f'Cannot approve. {applicant.full_name} only has 'f'{total_sick_available} Sick day(s) available.','danger')
+    elif leave_req.leave_type == 'Sick Leave':
+        if days > applicant.sick_leave_paid_balance:
+            flash(
+                f'Cannot approve. {applicant.full_name} only has '
+                f'{applicant.sick_leave_paid_balance} Sick day(s) available.',
+                'danger'
+            )
             return redirect(url_for('manager_dashboard'))
-        if days <= applicant.sick_leave_paid_balance:
-            applicant.sick_leave_paid_balance -= days
-        else:
-            remaining = days - applicant.sick_leave_paid_balance
-            applicant.sick_leave_paid_balance = 0
-            applicant.sick_leave_unpaid_balance -= remaining
+        applicant.sick_leave_paid_balance -= days
+        print("Sick balance after deduction:", applicant.sick_leave_paid_balance)
 
     elif leave_req.leave_type == 'Maternity':
         if applicant.maternity_leave_balance < days:

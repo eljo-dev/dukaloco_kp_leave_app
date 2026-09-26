@@ -54,8 +54,8 @@
         <div class="col-md-4">
             <div class="card border-warning shadow-sm text-center">
                 <div class="card-body">
-                    <h6 class="text-muted">Sick Leave (Unpaid)</h6>
-                    <h2 class="text-warning fw-bold">{{ user.sick_leave_unpaid_balance }} <small class="fs-6">/ 7 days</small></h2>
+                    <h6 class="text-muted">Sick Leave</h6>
+                    <h2 class="text-warning fw-bold">{{ user.sick_leave_paid_balance }} <small class="fs-6">/ 7 days</small></h2>
                 </div>
             </div>
         </div>
@@ -65,6 +65,15 @@
                 <div class="card-body">
                     <h6 class="text-muted">Maternity Leave</h6>
                     <h2 class="text-info fw-bold">{{ user.maternity_leave_balance }} <small class="fs-6">days</small></h2>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card border-info shadow-sm text-center">
+                <div class="card-body">
+                    <h6 class="text-muted">Paternity Leave</h6>
+                    <h2 class="text-info fw-bold">{{ user.paternity_leave_balance }} <small class="fs-6">days</small></h2>
                 </div>
             </div>
         </div>
